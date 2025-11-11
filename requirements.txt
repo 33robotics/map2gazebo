@@ -1,0 +1,7 @@
+trimesh
+numpy
+pycollada
+scipy
+networkx
+opencv-contrib-python 
+

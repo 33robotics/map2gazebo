@@ -42,11 +42,117 @@ class MapConverter():
         if not self.export_dir.endswith('/'):
             self.export_dir = self.export_dir + '/'
         file_dir = self.export_dir + map_info['image'].replace('pgm','stl')
-        print(f'export file: {file_dir}')
+        print(f'export STL file: {file_dir}')
         
         with open(file_dir, 'wb') as f:
             mesh.export(f, "stl")
+        
+        self.create_sdf_file(map_info, file_dir)
+
+    def create_sdf_file(self, map_info, stl_file_path):
+        """
+        Create a Gazebo SDF file that references the generated STL mesh
+        """
+        map_name = os.path.splitext(map_info['image'])[0]
+        
+        sdf_file_path = stl_file_path.replace('.stl', '.sdf')
+        
+        stl_absolute_path = os.path.abspath(stl_file_path)
+        
+        sdf_content = f"""<?xml version="1.0"?>
+<sdf version="1.9" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="headless" default="false" />
+  
+  <world name="{map_name}">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
     
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+
+    <!-- Conditional plugins for GUI mode -->
+    <xacro:unless value="$(arg headless)">
+      <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      </plugin>
+    </xacro:unless>
+
+    <!-- Lighting -->
+    <light type="directional" name="sun">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <direction>0 0 -1</direction>
+    </light>
+
+    <!-- Ground plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.2 0.8 0.2 1</ambient>
+            <diffuse>0.2 0.8 0.2 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Map STL model -->
+    <model name="{map_name}_model">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <mesh>
+              <uri>file://{stl_absolute_path}</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <mesh>
+              <uri>file://{stl_absolute_path}</uri>
+            </mesh>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>"""
+
+        with open(sdf_file_path, 'w') as f:
+            f.write(sdf_content)
+        
+        print(f'export SDF file: {sdf_file_path}')
+        print(f'Map name: {map_name}')
+        print(f'STL path in SDF: file://{stl_absolute_path}')
+
     def get_occupied_regions(self, map_array):
         """
         Get occupied regions of map
@@ -56,11 +162,6 @@ class MapConverter():
                 map_array, self.threshold, 100, cv2.THRESH_BINARY)
         contours, hierarchy = cv2.findContours(
                 thresh_map, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
-        # Using cv2.RETR_CCOMP classifies external contours at top level of
-        # hierarchy and interior contours at second level.  
-        # If the whole space is enclosed by walls RETR_EXTERNAL will exclude
-        # all interior obstacles e.g. furniture.
-        # https://docs.opencv.org/trunk/d9/d8b/tutorial_py_contours_hierarchy.html
         hierarchy = hierarchy[0]
         output_contours = []
         for idx, contour in enumerate(contours):
@@ -98,18 +199,13 @@ class MapConverter():
                 mesh.fix_normals()
             meshes.append(mesh)
         mesh = trimesh.util.concatenate(meshes)
-        mesh.remove_duplicate_faces()
-        # mesh will still have internal faces.  Would be better to get
-        # all duplicate faces and remove both of them, since duplicate faces
-        # are guaranteed to be internal faces
+        mesh.update_faces(mesh.unique_faces())
         return mesh
 
     def coords_to_loc(self,coords, metadata):
         x, y = coords
         loc_x = x * metadata['resolution'] + metadata['origin'][0]
         loc_y = y * metadata['resolution'] + metadata['origin'][1]
-        # TODO: transform (x*res, y*res, 0.0) by Pose map_metadata.origin
-        # instead of assuming origin is at z=0 with no rotation wrt map frame
         return np.array([loc_x, loc_y, 0.0])
 
 if __name__ == "__main__":
