@@ -48,25 +48,24 @@ trimesh needs the following soft dependencies to export Collada (.dae) files.
 Theoretically you can install these with `pip install trimesh[soft]` but this
 failed for me, so I installed the needed ones myself.
 
-1. Install the python dependencies with pip:
-
-```bash
-pip3 install --user trimesh
-pip3 install --user numpy
-pip3 install --user pycollada
-pip3 install --user scipy
-pip3 install --user networkx
-pip3 install --user opencv-contrib-python 
-
-```
-
-2. Git clone map2gazebo and build package
-
+1. Git clone map2gazebo
 ```bash
 mkdir -p ~/map2gz_ros2_ws/src
 cd ~/map2gz_ros2_ws/src
-git clone https://github.com/Adlink-ROS/map2gazebo.git -b foxy-devel
-cd ..
+git clone https://github.com/33robotics/map2gazebo.git -b foxy-devel
+```
+
+2. Install the python dependencies with pip:
+
+```bash
+cd map2gazebo
+pip3 install -r requirements.txt
+```
+
+3. Build package
+
+```bash
+cd ~/map2gz_ros2_ws/
 colcon build --symlink-install
 ```
 
